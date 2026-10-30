@@ -85,14 +85,40 @@ def load_existing(path: Path = WAREHOUSE_PATH) -> dict[str, dict]:
 
             row["transaction_id"] = txn_id
             transactions[txn_id] = row
-    print(transactions)
+    
     return transactions
     
 
 def load_batch(path: Path) -> tuple[str, list[dict]]:
     """Read one JSON batch file and return (batch_id, transactions)."""
-    raise NotImplementedError
-
+    logger = setup_logging()
+    try:
+        with path.open("r", encoding="utf-8")as file:
+            batch=json.load(file)
+    except OSError as exc:
+        logger.error("Cannot read batch file %s: %s", path, exc)
+        return None
+    except ValueError as exc:
+        logger.error("Malformed JSON in %s: %s", path, exc)
+        return None
+    
+    if not isinstance(batch, dict):
+        logger.error("Batch file %s must contain a JSON object", path)
+        return None
+    
+    try:
+        batch_id = batch["batch_id"]
+        transactions = batch["transactions"]
+    except KeyError as exc:
+        logger.error("Batch file %s is missing key %s", path, exc)
+        return None
+    
+    if not isinstance(transactions, list):
+        logger.error(" 'transactions' in %s must be a list", path)
+        return None
+    
+    return batch_id, transactions
+        
 
 def validate_record(record: dict) -> list[str]:
     """Return the reasons a batch record cannot be loaded (empty list means valid)."""
@@ -131,8 +157,16 @@ def save_warehouse(state: dict[str, dict], path: Path = WAREHOUSE_PATH) -> None:
 def run() -> dict:
     """Process every batch not yet recorded in the checkpoint and return run statistics."""
     # TODO
-    setup_logging()
+    logger = setup_logging()
+    logger.info("Run started")
+    
     load_existing(path=WAREHOUSE_PATH)
+    
+    for path in sorted(BATCH_DIR.glob("*.json")):
+        result = load_batch(path)
+        if result is None:
+            continue
+        batch_id, transactions = result
 
 
 if __name__ == "__main__":
